@@ -1,0 +1,27 @@
+{
+  "operation_count": 111,
+  "path_count": 97,
+  "schema_count": 218,
+  "documented_dto_count": 156,
+  "feature_count": 50,
+  "table_count": 36,
+  "screen_count": 14,
+  "original_acceptance_count": 28,
+  "reference_check": "passed",
+  "operation_id_check": "passed",
+  "path_parameter_check": "passed",
+  "source_sha256": {
+    "공금이_웹앱_기능명세서_v3.3.md": "0c3252a5bfeae4f010ebe6c39bb094e45dcf3b8f4f15b96cb1cd5f1286ad7b8b",
+    "공금이_ERD_테이블_명세서_v1.3.md": "2831d1ff515a2ec98b63e4321a5250824a2b0b3e598cbbb70208343b61589c95",
+    "슬라이드_화면설계서.pdf": "3fdcd27fb461691fb88275504f5288a186e65b38435c29e398a60077d53ebb8d",
+    "공금이_ERD_전체도_v1.3.png": "721d09c4f1341f268753197275cc04b36bc6e035acf132d2f817210ccf8ec949"
+  },
+  "runtime_api_tests": "not performed; design artifacts only",
+  "openapi_standard_validation": "passed: openapi-spec-validator",
+  "json_schema_meta_validation": "passed: 218 schemas",
+  "valid_examples": "passed: 19",
+  "invalid_input_examples": "passed: 24 rejected",
+  "markdown_internal_links": "passed",
+  "markdown_code_fences": "passed",
+  "protected_operations_security": "passed"
+}

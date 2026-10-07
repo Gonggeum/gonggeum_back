@@ -1,0 +1,206 @@
+공금이 백엔드 작업 보고서
+작업일: 2026-10-07
+프로젝트: <로컬 프로젝트 경로>
+작업 범위: MySQL 마이그레이션 및 인증 선행 기반 / 약관 조회 A01 / 중복 확인 A02
+
+1. 작업 결과
+
+인증 구현에 필요한 DB 저장 구조와 공개 조회 API 두 개를 구현했다. 실제 MySQL과 Redis를 사용하는 통합 테스트를 구성하고, 테스트를 통과한 마이그레이션을 개발 DB에도 적용했다.
+
+최종 Maven 빌드: 성공
+기본/단위 테스트: 10개 성공
+MySQL·Redis 통합 테스트: 12개 성공
+총 테스트: 22개, 실패 0, 오류 0, 건너뜀 0
+실제 개발 환경 readiness: UP
+개발 DB 마이그레이션: V1, V2 모두 성공
+
+이 작업은 인증 전체 완료가 아니다. 회원가입, 로그인, JWT, refresh, 로그아웃, 내 정보는 다음 기능 단위이며 이번에 공개하지 않았다.
+
+2. 데이터베이스 구현
+
+ERD v1.3의 36개 테이블 중 다음 14개를 생성했다.
+
+V1__create_identity_tables.sql (11개)
+- users: 사용자, 로그인 식별자, 계정 상태, 실패 횟수, 잠금 시각
+- stored_files: 파일 메타데이터, 원본/파생 관계, 마스킹 및 삭제 상태
+- terms: 약관 유형, 버전, 전문, 게시/폐기 시각
+- term_consents: 사용자와 정확한 약관 버전의 동의
+- user_sessions: UUID 세션, refresh 해시, 절대 만료, 회수 상태
+- social_accounts: 소셜 제공자 subject 및 계정 연결 기반
+- verification_tokens: 목적별 challenge/grant 저장 기반
+- user_security_settings: TOTP 및 자동 잠금 설정 기반
+- totp_recovery_codes: 1회용 복구 코드 해시 기반
+- login_histories: 로그인 단계·성공/실패·시도 식별자 기반
+- notification_settings: 가입 시 생성할 기본 알림 설정
+
+V2__create_request_and_cleanup_tables.sql (3개)
+- idempotency_requests: 커밋된 성공 요청의 멱등 키/해시/결과
+- deletion_jobs: 대상 삭제 이후에도 남는 독립 정리 작업
+- deletion_job_items: 외부 파일 등 개별 정리 대상과 재시도 상태
+
+14개 테이블에 대해 ERD의 컬럼 목록과 실제 MySQL 컬럼을 대조해 일치를 확인했다. FK는 총 17개다. users와 stored_files의 순환 참조는 테이블을 먼저 만든 뒤 FK를 연결했다.
+
+BIGINT UNSIGNED, DATETIME(6), UNIQUE, FK 삭제 규칙, 상태 값 CHECK를 적용했다. 로그인 ID는 ascii_bin, 이메일은 정규화 후 대소문자를 구분하는 비교를 사용한다. 객체 키·소셜 subject·멱등 키도 대소문자를 보존한다.
+
+앱 내 알림 true 고정, 활성 DND의 필수 시간 값, 세션 만료 시각, 멱등 상태 COMMITTED 및 성공 HTTP 코드 등을 제약으로 표현했다. 서비스 트랜잭션이 필요한 규칙까지 DB 제약만으로 완성한 것은 아니다.
+
+임의 사용자나 실제처럼 보이는 약관은 개발 DB에 넣지 않았다. 적용 후 users와 terms는 각각 0행이다. 기존 개발 데이터 삭제·초기화는 수행하지 않았다.
+
+감사 로그는 팀/프로젝트 FK 대상이 아직 없으므로 불완전한 참조 상태로 생성하지 않았다. 해당 테이블과 함께 후속 마이그레이션으로 준비하고 첫 팀·프로젝트 쓰기 기능부터 같은 트랜잭션에 기록해야 한다. 멱등 replay 서비스와 삭제 워커도 현재는 미구현이다.
+
+3. API 구현
+
+A01: GET /api/v1/terms
+- 공개 약관 조회 API.
+- 실제 게시 시각과 폐기 시각을 기준으로 현재 유효한 약관만 반환한다.
+- 같은 유형의 유효 버전이 겹치면 게시 시각이 최신인 버전을 선택한다. 같은 시각이면 ID로 순서를 확정한다.
+- 응답은 data.items, data.page, meta 형태다.
+- ID는 JSON 문자열, 시각은 UTC ISO 8601이다.
+- limit은 기본 20, 최소 1, 최대 100이다.
+- 커서는 HMAC-SHA256 서명으로 목적, 마지막 ID, 페이지 크기, 만료 시각을 검증한다.
+- TTL은 30분이며 변조, 만료, 다른 limit으로의 재사용은 400이다.
+- 약관이 없으면 200과 빈 items를 반환한다. 약관 전문을 임의 생성하거나 v1.0을 고정하지 않는다.
+
+A02: POST /api/v1/auth/availability
+- 공개 아이디/이메일 중복 확인 API.
+- 입력 예: {"field":"login_id","value":"sampleuser"}
+- 아이디/이메일 앞뒤 공백을 제거하고 이메일을 소문자로 정규화한다.
+- 아이디는 소문자 영문/숫자 4~20자로 검사한다.
+- 이메일 형식과 최대 길이를 검사한다.
+- 응답은 is_available과 normalized_value다.
+- 미정의 필드, 잘못된 자료형, 허용하지 않은 field를 거절한다.
+- 조회는 계정을 생성하거나 아이디를 예약하지 않는다. 가입 시 UNIQUE를 다시 확인해야 한다.
+
+두 API 모두 요청 ID와 Cache-Control: private, no-store를 유지한다. 기존 401 코드 UNAUTHORIZED는 명세에 맞는 UNAUTHENTICATED로 정정했다.
+
+4. 공통 처리와 보안 경계
+
+ApiException으로 상태 코드·업무 오류·필드별 오류·Retry-After를 전달하도록 구성했다. 잘못된 JSON, DTO 검증 실패, 쿼리 자료형 오류를 공통 응답으로 변환한다. 저장소 연결 장애는 내부 연결 정보를 노출하지 않는 503으로 응답한다.
+
+기존 Jackson의 allow-coercion-of-scalars=false만으로 숫자가 문자열 입력에 들어오는 것을 막지 못하는 문제가 실제 테스트에서 발견됐다. JsonConfig에서 문자열 필드에 대한 정수·실수·boolean 자동 변환을 별도로 차단했다.
+
+두 공개 API에는 각각 접속 IP별 Redis 요청 제한을 적용했다. 기본값은 분당 60회이며 PUBLIC_AUTH_RATE_LIMIT로 조정한다. Redis Lua로 INCR/EXPIRE를 원자 실행하고, 초과하면 429와 Retry-After를 반환한다. Redis가 없으면 요청 제한을 우회하지 않고 503을 반환한다.
+
+외부에서 주입한 X-Forwarded-For는 신뢰하지 않는다. 실제 프록시를 배치할 때 신뢰 경계와 원 IP 전달을 별도로 확정해야 한다. 입력 검증이 먼저 거절한 요청은 일부 카운트 전에 종료되므로 전체 트래픽 방어를 대체하지 않는다.
+
+쿠키 인증이나 상태 변경을 하지 않는 A02 POST 조회만 CSRF 검사에서 제외했다. 나머지 쓰기 경로의 CSRF 보호와 미구현 업무 경로 차단은 유지했다. JWT 인증이 구현됐다고 간주해서는 안 된다.
+
+5. Flyway 및 개발 환경
+
+Flyway는 기존 11.7.2에서 최종 11.20.3으로 고정했다. 중간 후보 11.14.1에서는 MySQL 8.4 검증 버전 경고가 남았고, 공식 소스에서 MySQL 검증 범위가 9.4로 갱신된 11.20.3을 확인했다. 최종 테스트와 개발 기동에서는 해당 경고가 발생하지 않았다.
+
+기존 개발 컨테이너와 포트는 유지했다.
+- gonggeumi-local-mysql-1 / 127.0.0.1:3306 / gonggeumi
+- gonggeumi-local-redis-1 / 127.0.0.1:6379
+
+별도 compose.test.yml을 추가했다.
+- gonggeumi-test-mysql-1 / 127.0.0.1:13306 / gonggeumi_test
+- gonggeumi-test-redis-1 / 127.0.0.1:16379
+
+테스트 DB는 개발 볼륨과 공유하지 않는 tmpfs를 사용한다. 테스트는 DB 이름을 검사하고, 테스트 데이터는 트랜잭션 롤백 또는 해당 테스트가 생성한 데이터만 삭제하는 방식으로 정리한다. Docker가 없으면 통합 테스트를 성공으로 건너뛰지 않고 실패한다.
+
+검증용 앱은 임시 18080 포트로 실행 후 종료했다. IntelliJ에서 실행하면 기본 8080 포트를 사용한다. 테스트 컨테이너는 검증 후 중지하고 개발 컨테이너는 계속 실행하도록 정리한다.
+
+6. 테스트에서 확인한 항목
+
+기본/단위 10개
+- 공개 health 응답 및 내부 상세 비노출
+- 업무 경로 접근 차단과 서버 생성 요청 ID
+- CSRF 보호 및 CSRF 토큰만으로 인증 불가
+- JSON 명명 규칙 및 정수 입력 검증
+- unsigned BIGINT 최대 범위와 잘못된 ID 거절
+- 커서 변조·만료·페이지 크기 변경 거절
+- 운영용 커서 키 누락/짧은 키 거절
+- Redis 장애 시 503 처리
+
+MySQL·Redis 통합 12개
+- Flyway validate 및 재실행 시 추가 적용 0건
+- 실제 테이블 14개, FK 17개, READ COMMITTED 확인
+- 빈 약관 응답
+- 현재 약관 버전 선택과 페이지 이동
+- 잘못된 limit/cursor 거절
+- 입력 정규화와 중복 조회가 DB에 쓰지 않음
+- 미정의 필드/자료형/아이디 형식 거절
+- 429 및 X-Forwarded-For를 통한 제한 우회 거절
+- UNIQUE/FK/CHECK/unsigned 범위 적용
+- 동일 아이디 동시 등록 시 한 요청만 성공
+- 멱등 키 복합 유일성과 COMMITTED 제약
+- Redis 동시 10요청 중 설정된 5요청만 허용
+- 미구현 인증 경로 차단
+
+위 항목 중 여러 검증이 하나의 테스트 메서드에 포함된다. 전체 테스트 메서드는 22개다. CHECK 제약 위반은 MySQL 드라이버가 일반 DataIntegrityViolationException 대신 별도 SQLException으로 전달하는 경우가 있어, 해당 제약 이름까지 확인하도록 테스트를 보완했다.
+
+별도 실제 HTTP 확인
+- /actuator/health/readiness -> UP
+- GET /api/v1/terms -> 200, 빈 약관 목록
+- POST /api/v1/auth/availability -> 200, is_available=true
+- 개발 DB V1/V2 적용 및 사용자/약관 샘플 데이터 미삽입 확인
+
+7. 실행 방법
+
+PowerShell에서:
+cd <로컬 프로젝트 경로>
+docker compose up -d --wait
+.\mvnw.cmd spring-boot:run
+
+조회 예시:
+Invoke-RestMethod http://localhost:8080/api/v1/terms
+Invoke-RestMethod http://localhost:8080/api/v1/auth/availability -Method Post -ContentType 'application/json' -Body '{"field":"email","value":" Test@Example.com "}'
+
+일반 테스트:
+.\mvnw.cmd verify
+
+실제 MySQL·Redis 통합 테스트:
+docker compose -f compose.test.yml up -d --wait
+.\mvnw.cmd -Pmysql-it verify
+docker compose -f compose.test.yml stop
+
+운영에서는 CURSOR_SIGNING_KEY에 32 bytes 이상 난수의 Base64 값을 외부 주입해야 한다. 로컬/테스트에서는 미설정 시 매 실행 난수 키를 사용하므로 재시작 시 이전 커서가 무효가 된다. 이 값은 JWT 비밀키가 아니다. 운영 다중 인스턴스는 같은 커서 키를 사용해야 한다.
+
+8. 주요 변경 파일
+
+pom.xml: Flyway 11.20.3, mysql-it Failsafe 프로필
+compose.test.yml: 분리된 MySQL/Redis 테스트 환경
+src/main/resources/db/migration/V1__create_identity_tables.sql
+src/main/resources/db/migration/V2__create_request_and_cleanup_tables.sql
+src/main/resources/db/migration/README.md
+src/main/resources/application.yml: 커서 키/요청 제한 설정
+src/main/java/com/gonggeumi/auth/PublicAuthController.java
+src/main/java/com/gonggeumi/auth/AvailabilityService.java
+src/main/java/com/gonggeumi/auth/Term.java
+src/main/java/com/gonggeumi/auth/TermRepository.java
+src/main/java/com/gonggeumi/auth/TermService.java
+src/main/java/com/gonggeumi/auth/TermCursor.java
+src/main/java/com/gonggeumi/auth/PublicAuthRateLimiter.java
+src/main/java/com/gonggeumi/common/domain/UnsignedId.java
+src/main/java/com/gonggeumi/common/web/ApiException.java
+src/main/java/com/gonggeumi/common/web/GlobalExceptionHandler.java
+src/main/java/com/gonggeumi/config/JsonConfig.java
+src/main/java/com/gonggeumi/config/SecurityConfig.java
+src/test/java/com/gonggeumi/GonggeumiApplicationTests.java
+src/test/java/com/gonggeumi/auth/TermCursorTest.java
+src/test/java/com/gonggeumi/auth/PublicAuthRateLimiterTest.java
+src/test/java/com/gonggeumi/auth/AuthFoundationIT.java
+src/test/resources/application-mysql-it.yml
+
+상세 결정 기록: docs/ADR_001_AUTH_FOUNDATION.md
+스키마 대조 기록: docs/reports/2026-10-07-schema-verification.json
+빌드 로그: foundation-verification.log
+테스트 결과: target/surefire-reports 및 target/failsafe-reports
+
+읽기 구현은 JdbcClient와 도메인 record를 사용한다. JPA 엔티티 전체가 만들어진 것은 아니며, Hibernate validate 설정만으로 14개 테이블의 엔티티 정합성을 검증했다고 주장하지 않는다.
+
+9. 다음 작업과 필요한 결정
+
+다음 기능 단위는 A03 회원가입과 인증 세션이다.
+1) 실제 게시할 SERVICE/PRIVACY 약관 전문과 버전을 확정한다.
+2) 사용자·약관 동의·기본 설정·세션·로그인 이력을 하나의 트랜잭션으로 저장한다.
+3) bcrypt/Argon2 비밀번호 정책과 가입 입력 검증을 적용한다.
+4) 자동 로그인용 access JWT 2시간, refresh 14일 절대 만료와 sid 검증을 구현한다.
+5) 로그인 실패 5회/5분 잠금과 이후 CAPTCHA 제공자를 연결한다.
+6) refresh rotation, 쿠키 범위, CSRF/Origin, 로그아웃 후 access 즉시 차단을 구현한다.
+7) 가입 성공/중복 경쟁/롤백/필수 약관 변경/세션 회수 테스트를 추가한다.
+
+그 전에 프런트 배포 도메인, 로컬 HTTPS 또는 프록시 방식, 쿠키/CORS, CAPTCHA 제공자, 선택 프로필 이미지 저장소를 결정해야 한다. 프로필 업로드·소셜·TOTP·파일 정리 실행은 해당 단계의 서비스가 추가되기 전까지 동작하지 않는다.
+
+이번 작업은 API 계약 문서 자체를 임의 변경하지 않았다. ERD와 API 원본 사본 및 SOURCE_MANIFEST.json은 유지했다. 이미 적용된 V1/V2 파일은 이후 수정하지 말고 후속 마이그레이션을 추가해야 한다.

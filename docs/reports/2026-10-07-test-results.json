@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-07",
+  "command": ".\\mvnw.cmd -B -Pmysql-it verify",
+  "build": "SUCCESS",
+  "flyway": "11.20.3",
+  "suites": [
+    {
+      "name": "com.gonggeumi.auth.PublicAuthRateLimiterTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.gonggeumi.auth.TermCursorTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.gonggeumi.GonggeumiApplicationTests",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.gonggeumi.auth.AuthFoundationIT",
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "total_tests": 22.0,
+  "dev_migrations": [
+    "1",
+    "2"
+  ],
+  "prior_dev_http_health": "UP",
+  "prior_dev_http_terms": 200,
+  "prior_dev_http_availability": 200
+}

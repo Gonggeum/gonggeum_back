@@ -1,0 +1,72 @@
+[
+  {
+    "table": "deletion_job_items",
+    "columns": 12,
+    "matches_erd": true
+  },
+  {
+    "table": "deletion_jobs",
+    "columns": 15,
+    "matches_erd": true
+  },
+  {
+    "table": "idempotency_requests",
+    "columns": 12,
+    "matches_erd": true
+  },
+  {
+    "table": "login_histories",
+    "columns": 11,
+    "matches_erd": true
+  },
+  {
+    "table": "notification_settings",
+    "columns": 13,
+    "matches_erd": true
+  },
+  {
+    "table": "social_accounts",
+    "columns": 7,
+    "matches_erd": true
+  },
+  {
+    "table": "stored_files",
+    "columns": 18,
+    "matches_erd": true
+  },
+  {
+    "table": "term_consents",
+    "columns": 7,
+    "matches_erd": true
+  },
+  {
+    "table": "terms",
+    "columns": 8,
+    "matches_erd": true
+  },
+  {
+    "table": "totp_recovery_codes",
+    "columns": 4,
+    "matches_erd": true
+  },
+  {
+    "table": "user_security_settings",
+    "columns": 11,
+    "matches_erd": true
+  },
+  {
+    "table": "user_sessions",
+    "columns": 11,
+    "matches_erd": true
+  },
+  {
+    "table": "users",
+    "columns": 13,
+    "matches_erd": true
+  },
+  {
+    "table": "verification_tokens",
+    "columns": 15,
+    "matches_erd": true
+  }
+]

@@ -1,0 +1,68 @@
+-- The execution services are added with their business features; these are storage contracts.
+CREATE TABLE idempotency_requests (
+    id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    actor_user_id BIGINT UNSIGNED NOT NULL,
+    scope_type VARCHAR(20) NOT NULL,
+    scope_id_snapshot BIGINT UNSIGNED NOT NULL,
+    operation VARCHAR(50) COLLATE utf8mb4_0900_as_cs NOT NULL,
+    client_key VARCHAR(100) COLLATE utf8mb4_0900_as_cs NOT NULL,
+    payload_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    result_type VARCHAR(40) NOT NULL,
+    result_id_snapshot VARCHAR(100) NOT NULL,
+    response_code SMALLINT UNSIGNED NOT NULL,
+    created_at DATETIME(6) NOT NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uk_idempotency_scope_key UNIQUE (actor_user_id,scope_type,scope_id_snapshot,operation,client_key),
+    CONSTRAINT fk_idempotency_actor FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE RESTRICT,
+    CONSTRAINT ck_idempotency_scope CHECK (scope_type IN ('USER','TEAM','PROJECT')),
+    CONSTRAINT ck_idempotency_committed CHECK (status = 'COMMITTED'),
+    CONSTRAINT ck_idempotency_success CHECK (response_code BETWEEN 200 AND 299)
+) ENGINE=InnoDB;
+
+CREATE TABLE deletion_jobs (
+    id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    scope_type VARCHAR(20) NOT NULL,
+    scope_id_snapshot BIGINT UNSIGNED NOT NULL,
+    scope_name_snapshot VARCHAR(100) NOT NULL,
+    requested_by_user_id BIGINT UNSIGNED NULL,
+    request_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    phase VARCHAR(30) NOT NULL,
+    context_json JSON NULL,
+    attempt_count INT UNSIGNED NOT NULL DEFAULT 0,
+    available_at DATETIME(6) NOT NULL,
+    lease_until DATETIME(6) NULL,
+    last_error_code VARCHAR(100) NULL,
+    created_at DATETIME(6) NOT NULL,
+    completed_at DATETIME(6) NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uk_deletion_request UNIQUE (request_id),
+    INDEX ix_deletion_scope (scope_type,scope_id_snapshot),
+    INDEX ix_deletion_available (status,available_at),
+    CONSTRAINT fk_deletion_requester FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    CONSTRAINT ck_deletion_scope CHECK (scope_type IN ('TEAM','PROJECT','PERSONAL','FILE')),
+    CONSTRAINT ck_deletion_status CHECK (status IN ('PENDING','RUNNING','RETRY','FAILED','COMPLETED')),
+    CONSTRAINT ck_deletion_phase CHECK (phase IN ('FREEZE','DETACH','OBJECTS','FINALIZE'))
+) ENGINE=InnoDB;
+
+CREATE TABLE deletion_job_items (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    job_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    resource_type VARCHAR(30) NOT NULL,
+    resource_id_snapshot VARCHAR(100) NOT NULL,
+    resource_key_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    locator_json JSON NULL,
+    status VARCHAR(20) NOT NULL,
+    attempt_count INT UNSIGNED NOT NULL DEFAULT 0,
+    available_at DATETIME(6) NOT NULL,
+    lease_until DATETIME(6) NULL,
+    last_error_code VARCHAR(100) NULL,
+    completed_at DATETIME(6) NULL,
+    PRIMARY KEY (id),
+    CONSTRAINT uk_deletion_item UNIQUE (job_id,resource_type,resource_key_hash),
+    INDEX ix_deletion_item_available (status,available_at),
+    CONSTRAINT fk_deletion_item_job FOREIGN KEY (job_id) REFERENCES deletion_jobs(id) ON DELETE RESTRICT,
+    CONSTRAINT ck_deletion_item_type CHECK (resource_type IN ('OCR_JOB','EXPORT_JOB','FILE','CACHE','PROJECT','TEAM')),
+    CONSTRAINT ck_deletion_item_status CHECK (status IN ('PENDING','RUNNING','RETRY','DONE','SKIPPED_SHARED','FAILED'))
+) ENGINE=InnoDB;

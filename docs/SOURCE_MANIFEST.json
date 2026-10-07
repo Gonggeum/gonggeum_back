@@ -1,0 +1,41 @@
+{
+  "verified_at": "2026-10-07",
+  "files": [
+    {
+      "source": "공금이_웹앱_기능명세서_v3.3.md",
+      "copy": "requirements/공금이_웹앱_기능명세서_v3.3.md",
+      "sha256": "0c3252a5bfeae4f010ebe6c39bb094e45dcf3b8f4f15b96cb1cd5f1286ad7b8b",
+      "matches_source": true
+    },
+    {
+      "source": "공금이_ERD_테이블_명세서_v1.3.md",
+      "copy": "erd/공금이_ERD_테이블_명세서_v1.3.md",
+      "sha256": "2831d1ff515a2ec98b63e4321a5250824a2b0b3e598cbbb70208343b61589c95",
+      "matches_source": true
+    },
+    {
+      "source": "공금이_ERD_전체도_v1.3.png",
+      "copy": "erd/공금이_ERD_전체도_v1.3.png",
+      "sha256": "721d09c4f1341f268753197275cc04b36bc6e035acf132d2f817210ccf8ec949",
+      "matches_source": true
+    },
+    {
+      "source": "공금이_API_명세서_v1.0.md",
+      "copy": "api/공금이_API_명세서_v1.0.md",
+      "sha256": "af7c616191d1cc2b8efec06cfde864bed8ad9f4504830d7200eeda436d3679b8",
+      "matches_source": true
+    },
+    {
+      "source": "공금이_OpenAPI_v1.0.json",
+      "copy": "api/공금이_OpenAPI_v1.0.json",
+      "sha256": "9f67cafdb0d03c30437d25e824e9c95aa0ef6f9fbd120a5d86f42781e3d8b657",
+      "matches_source": true
+    },
+    {
+      "source": "검증_결과.json",
+      "copy": "api/검증_결과.json",
+      "sha256": "dad60e45dd99c172698f233344cf985a2f83f2c03cf76c101963f2c921a8687a",
+      "matches_source": true
+    }
+  ]
+}
