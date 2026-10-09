@@ -2,7 +2,7 @@
 
 26-2 창업동아리 프로젝트 팀 공금이의 백엔드 저장소입니다.
 
-Java 21 / Spring Boot 3.5.16 / MySQL 8.4 / Redis 7.4 / Flyway 11.20.3을 사용합니다.
+Java 21 / Spring Boot 3.5.16 / MySQL 8.4 / Redis 7.4
 
 ## 현재 구현 범위
 
